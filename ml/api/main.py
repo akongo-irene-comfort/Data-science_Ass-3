@@ -5,7 +5,6 @@ Low-latency inference API with monitoring and logging
 
 import time
 import logging
-from typing import List
 from datetime import datetime
 from typing import List
 import torch
