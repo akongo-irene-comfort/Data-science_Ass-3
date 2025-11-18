@@ -7,7 +7,7 @@ import time
 import logging
 from typing import List
 from datetime import datetime
-
+from typing import List
 import torch
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
