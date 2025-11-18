@@ -2,7 +2,6 @@
 Utility functions for model training and evaluation
 """
 
-import os
 import json
 import torch
 from pathlib import Path

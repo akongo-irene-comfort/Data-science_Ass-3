@@ -122,7 +122,7 @@ def evaluate_model(
     print(f"Mean Waiting Time: {metrics['mean_waiting_time']:.2f}s")
     print(f"Mean Queue Length: {metrics['mean_queue_length']:.2f}")
     print(f"Mean Throughput: {metrics['mean_throughput']:.0f} vehicles")
-    print(f"\nMetrics saved to: {output_path}")
+    print(f"Metrics saved to: {output_path}")
 
     return metrics
 

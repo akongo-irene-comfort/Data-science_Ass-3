@@ -5,8 +5,6 @@ Implements Deep Q-Network with experience replay and target network
 
 import argparse
 import json
-import os
-import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -18,8 +16,8 @@ from torch.utils.tensorboard import SummaryWriter
 import wandb
 
 from environment import TrafficEnv
-from dqn_agent import DQNAgent, ReplayBuffer
-from utils import save_checkpoint, load_checkpoint
+from dqn_agent import ReplayBuffer
+from utils import save_checkpoint
 
 
 class DQNNetwork(nn.Module):

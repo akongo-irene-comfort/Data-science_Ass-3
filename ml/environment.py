@@ -63,7 +63,7 @@ class TrafficEnv(gym.Env):
         if self.connection is not None:
             try:
                 traci.close()
-            except:
+            except Exception:
                 pass
 
         # Start SUMO
@@ -176,7 +176,7 @@ class TrafficEnv(gym.Env):
         try:
             phase = phase_mapping.get(action, 0)
             traci.trafficlight.setPhase(traffic_light_id, phase)
-        except:
+        except Exception:
             pass
 
     def _compute_reward(self):
@@ -248,7 +248,7 @@ class TrafficEnv(gym.Env):
         if self.connection:
             try:
                 traci.close()
-            except:
+            except Exception:
                 pass
         self.connection = None
 

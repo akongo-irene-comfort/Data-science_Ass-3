@@ -5,10 +5,9 @@ Low-latency inference API with monitoring and logging
 
 import time
 import logging
-from typing import List, Dict, Any
 from datetime import datetime
 
-import numpy as np
+
 import torch
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware

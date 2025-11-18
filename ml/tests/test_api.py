@@ -2,11 +2,11 @@
 Unit tests for FastAPI inference service
 """
 
+import sys
 import pytest
 from fastapi.testclient import TestClient
-import sys
 
-sys.path.insert(0, "../")
+sys.path.insert(0, '../')
 
 from api.main import app
 
