@@ -1,0 +1,253 @@
+name: Train and Deploy RL Model
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  PYTHON_VERSION: '3.10'
+  MODEL_REGISTRY: ghcr.io/${{ github.repository }}/rl-traffic-model
+  API_IMAGE: ghcr.io/${{ github.repository }}/rl-traffic-api
+
+jobs:
+  # Job 1: Code Quality and Unit Tests
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ml/requirements.txt
+          pip install pytest pytest-cov flake8 black
+
+      - name: Lint with flake8
+        run: |
+          flake8 ml/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 ml/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Format check with black
+        run: black --check ml/
+
+      - name: Run unit tests
+        run: |
+          pytest ml/tests/ --cov=ml --cov-report=xml --cov-report=term
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+
+  # Job 2: Train RL Model
+  train:
+    name: Train DQN Model
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ml/requirements.txt
+
+      - name: Install SUMO
+        run: |
+          sudo add-apt-repository ppa:sumo/stable
+          sudo apt-get update
+          sudo apt-get install -y sumo sumo-tools sumo-doc
+
+      - name: Train DQN model
+        run: |
+          export SUMO_HOME=/usr/share/sumo
+          python ml/train.py \
+            --episodes 100 \
+            --batch-size 64 \
+            --learning-rate 0.001 \
+            --gamma 0.95 \
+            --epsilon-start 1.0 \
+            --epsilon-end 0.01 \
+            --epsilon-decay 100000 \
+            --target-update 1000 \
+            --output-dir models/
+        env:
+          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+
+      - name: Evaluate model
+        run: |
+          export SUMO_HOME=/usr/share/sumo
+          python ml/evaluate.py \
+            --model-path models/dqn_final.pth \
+            --episodes 10 \
+            --output metrics/evaluation.json
+
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-model
+          path: |
+            models/
+            metrics/
+          retention-days: 30
+
+      - name: Save model version
+        run: |
+          echo "MODEL_VERSION=$(date +%Y%m%d_%H%M%S)_${GITHUB_SHA::8}" >> $GITHUB_ENV
+          echo $MODEL_VERSION > models/version.txt
+
+  # Job 3: Build and Push Docker Images
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: train
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download model artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: trained-model
+          path: ml/models/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for API image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.API_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./ml
+          file: ./ml/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Job 4: Deploy to Kubernetes
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: ${{ github.event.inputs.environment || 'staging' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/hpa.yaml
+          kubectl rollout status deployment/rl-traffic-api -n rl-traffic
+
+      - name: Run smoke tests
+        run: |
+          kubectl wait --for=condition=ready pod -l app=rl-traffic-api -n rl-traffic --timeout=300s
+          kubectl port-forward -n rl-traffic svc/rl-traffic-api 8080:80 &
+          sleep 5
+          curl -f http://localhost:8080/health || exit 1
+
+  # Job 5: Deploy Monitoring Stack
+  deploy-monitoring:
+    name: Deploy Monitoring
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+      - name: Deploy Prometheus
+        run: |
+          kubectl apply -f k8s/monitoring/prometheus-config.yaml
+          kubectl apply -f k8s/monitoring/prometheus-deployment.yaml
+
+      - name: Deploy Grafana
+        run: |
+          kubectl apply -f k8s/monitoring/grafana-deployment.yaml
+
+      - name: Deploy Model Monitoring
+        run: |
+          kubectl apply -f k8s/monitoring/model-monitor-deployment.yaml
+
+  # Job 6: Notify on completion
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [deploy, deploy-monitoring]
+    if: always()
+    steps:
+      - name: Send notification
+        run: |
+          echo "Deployment completed with status: ${{ needs.deploy.result }}"
+          # Add Slack/Discord webhook notification here if needed

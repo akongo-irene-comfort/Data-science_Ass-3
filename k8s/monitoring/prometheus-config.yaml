@@ -1,0 +1,140 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: rl-traffic
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        cluster: 'rl-traffic-cluster'
+        environment: 'production'
+
+    # Alerting configuration
+    alerting:
+      alertmanagers:
+      - static_configs:
+        - targets:
+          - alertmanager:9093
+
+    # Rule files
+    rule_files:
+    - /etc/prometheus/alerts.yml
+
+    # Scrape configurations
+    scrape_configs:
+    # Prometheus self-monitoring
+    - job_name: 'prometheus'
+      static_configs:
+      - targets: ['localhost:9090']
+
+    # RL Traffic API endpoints
+    - job_name: 'rl-traffic-api'
+      kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+          - rl-traffic
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: namespace
+
+    # Model monitoring service
+    - job_name: 'model-monitor'
+      static_configs:
+      - targets: ['model-monitor:9091']
+        labels:
+          service: 'model-monitor'
+
+    # Node exporter for system metrics
+    - job_name: 'node-exporter'
+      kubernetes_sd_configs:
+      - role: node
+      relabel_configs:
+      - source_labels: [__address__]
+        regex: '(.*):10250'
+        replacement: '${1}:9100'
+        target_label: __address__
+
+  alerts.yml: |
+    groups:
+    - name: rl_traffic_alerts
+      interval: 30s
+      rules:
+      # High error rate
+      - alert: HighErrorRate
+        expr: rate(inference_requests_total{status="error"}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High inference error rate"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.model_version }}"
+
+      # High latency
+      - alert: HighInferenceLatency
+        expr: histogram_quantile(0.95, rate(inference_latency_seconds_bucket[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High inference latency"
+          description: "P95 latency is {{ $value }}s"
+
+      # Model drift detected
+      - alert: ModelDriftDetected
+        expr: model_drift_score > 0.3
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Model drift detected"
+          description: "Drift score is {{ $value }} for {{ $labels.model_version }}"
+
+      # Data drift detected
+      - alert: DataDriftDetected
+        expr: data_drift_score > 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Data drift detected"
+          description: "Input data distribution has shifted"
+
+      # Low model confidence
+      - alert: LowModelConfidence
+        expr: avg_over_time(model_confidence[10m]) < 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low model confidence"
+          description: "Average confidence is {{ $value }}"
+
+      # Pod down
+      - alert: APIPodsDown
+        expr: kube_deployment_status_replicas_available{deployment="rl-traffic-api"} < 2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Insufficient API pods"
+          description: "Only {{ $value }} pods available"

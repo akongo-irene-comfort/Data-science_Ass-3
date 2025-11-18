@@ -1,0 +1,239 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-monitor
+  namespace: rl-traffic
+  labels:
+    app: model-monitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: model-monitor
+  template:
+    metadata:
+      labels:
+        app: model-monitor
+    spec:
+      containers:
+      - name: monitor
+        image: python:3.10-slim
+        command: ["python", "/app/monitor.py"]
+        ports:
+        - containerPort: 9091
+          name: metrics
+        env:
+        - name: PROMETHEUS_PORT
+          value: "9091"
+        - name: API_ENDPOINT
+          value: "http://rl-traffic-api/predict"
+        - name: CHECK_INTERVAL
+          value: "60"
+        volumeMounts:
+        - name: monitor-script
+          mountPath: /app
+        - name: reference-data
+          mountPath: /data
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+      volumes:
+      - name: monitor-script
+        configMap:
+          name: model-monitor-script
+      - name: reference-data
+        persistentVolumeClaim:
+          claimName: reference-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-monitor
+  namespace: rl-traffic
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9091
+    targetPort: 9091
+    name: metrics
+  selector:
+    app: model-monitor
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-monitor-script
+  namespace: rl-traffic
+data:
+  monitor.py: |
+    """
+    Real-time Model Monitoring Service
+    Tracks data drift, model drift, and performance metrics
+    """
+    import os
+    import time
+    import json
+    import logging
+    from datetime import datetime
+    import numpy as np
+    from scipy import stats
+    from prometheus_client import start_http_server, Gauge, Counter
+    
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    
+    # Prometheus metrics
+    DATA_DRIFT_SCORE = Gauge('data_drift_score', 'KL divergence of input data distribution')
+    MODEL_DRIFT_SCORE = Gauge('model_drift_score', 'Model prediction drift score')
+    REWARD_TRACKING = Gauge('avg_episode_reward', 'Average episode reward in production')
+    PREDICTION_ENTROPY = Gauge('prediction_entropy', 'Entropy of model predictions')
+    FEATURE_STATS = Gauge('feature_statistics', 'Feature statistics', ['feature', 'stat'])
+    
+    class ModelMonitor:
+        def __init__(self):
+            self.reference_data = self.load_reference_data()
+            self.prediction_history = []
+            self.reward_history = []
+            
+        def load_reference_data(self):
+            """Load reference data distribution from training"""
+            try:
+                with open('/data/reference_stats.json', 'r') as f:
+                    return json.load(f)
+            except:
+                logger.warning("No reference data found, using defaults")
+                return {'means': [], 'stds': []}
+        
+        def calculate_kl_divergence(self, p, q):
+            """Calculate KL divergence between two distributions"""
+            p = np.asarray(p, dtype=np.float64)
+            q = np.asarray(q, dtype=np.float64)
+            
+            # Add small epsilon to avoid division by zero
+            p = p + 1e-10
+            q = q + 1e-10
+            
+            # Normalize
+            p = p / np.sum(p)
+            q = q / np.sum(q)
+            
+            return np.sum(p * np.log(p / q))
+        
+        def check_data_drift(self, current_data):
+            """Detect data drift using statistical tests"""
+            if not self.reference_data.get('means'):
+                return 0.0
+            
+            ref_means = np.array(self.reference_data['means'])
+            ref_stds = np.array(self.reference_data['stds'])
+            
+            current_means = np.mean(current_data, axis=0)
+            current_stds = np.std(current_data, axis=0)
+            
+            # Calculate drift score (normalized difference)
+            mean_drift = np.mean(np.abs((current_means - ref_means) / (ref_stds + 1e-10)))
+            
+            return float(mean_drift)
+        
+        def check_model_drift(self, predictions):
+            """Detect model drift by analyzing prediction patterns"""
+            if len(predictions) < 100:
+                return 0.0
+            
+            # Calculate prediction entropy
+            pred_counts = np.bincount(predictions, minlength=8)
+            pred_probs = pred_counts / len(predictions)
+            entropy = -np.sum(pred_probs * np.log(pred_probs + 1e-10))
+            
+            PREDICTION_ENTROPY.set(entropy)
+            
+            # Compare with expected distribution (uniform for exploration)
+            expected = np.ones(8) / 8
+            drift_score = self.calculate_kl_divergence(pred_probs, expected)
+            
+            return float(drift_score)
+        
+        def track_rewards(self, rewards):
+            """Track episode rewards over time"""
+            if len(rewards) > 0:
+                avg_reward = np.mean(rewards)
+                REWARD_TRACKING.set(avg_reward)
+                return avg_reward
+            return 0.0
+        
+        def update_metrics(self):
+            """Update all monitoring metrics"""
+            # Simulate receiving data (in production, fetch from API logs)
+            current_data = self.simulate_current_data()
+            predictions = self.simulate_predictions()
+            rewards = self.simulate_rewards()
+            
+            # Calculate metrics
+            data_drift = self.check_data_drift(current_data)
+            model_drift = self.check_model_drift(predictions)
+            avg_reward = self.track_rewards(rewards)
+            
+            # Update Prometheus metrics
+            DATA_DRIFT_SCORE.set(data_drift)
+            MODEL_DRIFT_SCORE.set(model_drift)
+            
+            logger.info(f"Metrics updated - Data Drift: {data_drift:.4f}, Model Drift: {model_drift:.4f}, Avg Reward: {avg_reward:.2f}")
+            
+            # Alert if drift exceeds threshold
+            if data_drift > 0.3:
+                logger.warning(f"Data drift alert! Score: {data_drift:.4f}")
+            if model_drift > 0.3:
+                logger.warning(f"Model drift alert! Score: {model_drift:.4f}")
+        
+        def simulate_current_data(self):
+            """Simulate current data (replace with actual API logs)"""
+            return np.random.randn(100, 25)
+        
+        def simulate_predictions(self):
+            """Simulate predictions (replace with actual logs)"""
+            return np.random.randint(0, 8, size=100)
+        
+        def simulate_rewards(self):
+            """Simulate rewards (replace with actual environment feedback)"""
+            return np.random.randn(10) * 10 - 50
+    
+    def main():
+        port = int(os.getenv('PROMETHEUS_PORT', 9091))
+        interval = int(os.getenv('CHECK_INTERVAL', 60))
+        
+        start_http_server(port)
+        logger.info(f"Model monitoring service started on port {port}")
+        
+        monitor = ModelMonitor()
+        
+        while True:
+            try:
+                monitor.update_metrics()
+            except Exception as e:
+                logger.error(f"Monitoring error: {str(e)}")
+            
+            time.sleep(interval)
+    
+    if __name__ == '__main__':
+        main()
+  
+  requirements.txt: |
+    prometheus-client==0.19.0
+    numpy==1.24.3
+    scipy==1.11.4
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: reference-data-pvc
+  namespace: rl-traffic
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

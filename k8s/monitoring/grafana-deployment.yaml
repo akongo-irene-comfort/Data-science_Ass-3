@@ -1,0 +1,163 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: rl-traffic
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+    - name: Prometheus
+      type: prometheus
+      access: proxy
+      url: http://prometheus:9090
+      isDefault: true
+      editable: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: rl-traffic
+data:
+  rl-traffic-dashboard.json: |
+    {
+      "dashboard": {
+        "title": "RL Traffic Control - Model Performance",
+        "panels": [
+          {
+            "title": "Inference Requests/sec",
+            "targets": [{"expr": "rate(inference_requests_total[1m])"}],
+            "type": "graph"
+          },
+          {
+            "title": "P95 Latency",
+            "targets": [{"expr": "histogram_quantile(0.95, rate(inference_latency_seconds_bucket[5m]))"}],
+            "type": "graph"
+          },
+          {
+            "title": "Error Rate",
+            "targets": [{"expr": "rate(inference_requests_total{status=\"error\"}[5m]) / rate(inference_requests_total[5m])"}],
+            "type": "graph"
+          },
+          {
+            "title": "Model Confidence",
+            "targets": [{"expr": "model_confidence"}],
+            "type": "gauge"
+          },
+          {
+            "title": "Data Drift Score",
+            "targets": [{"expr": "data_drift_score"}],
+            "type": "graph"
+          },
+          {
+            "title": "Model Drift Score",
+            "targets": [{"expr": "model_drift_score"}],
+            "type": "graph"
+          },
+          {
+            "title": "Average Reward",
+            "targets": [{"expr": "avg_episode_reward"}],
+            "type": "graph"
+          },
+          {
+            "title": "Active Pods",
+            "targets": [{"expr": "kube_deployment_status_replicas_available{deployment=\"rl-traffic-api\"}"}],
+            "type": "stat"
+          }
+        ]
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: rl-traffic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:10.2.0
+        ports:
+        - containerPort: 3000
+          name: web
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: grafana-secret
+              key: admin-password
+        - name: GF_INSTALL_PLUGINS
+          value: "grafana-piechart-panel"
+        volumeMounts:
+        - name: datasources
+          mountPath: /etc/grafana/provisioning/datasources
+        - name: dashboards-config
+          mountPath: /etc/grafana/provisioning/dashboards
+        - name: dashboards
+          mountPath: /var/lib/grafana/dashboards
+        - name: storage
+          mountPath: /var/lib/grafana
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+      volumes:
+      - name: datasources
+        configMap:
+          name: grafana-datasources
+      - name: dashboards-config
+        configMap:
+          name: grafana-dashboards
+      - name: dashboards
+        emptyDir: {}
+      - name: storage
+        persistentVolumeClaim:
+          claimName: grafana-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: rl-traffic
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 3000
+    targetPort: 3000
+    name: web
+  selector:
+    app: grafana
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grafana-secret
+  namespace: rl-traffic
+type: Opaque
+stringData:
+  admin-password: "changeme123"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+  namespace: rl-traffic
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
