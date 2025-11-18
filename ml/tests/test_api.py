@@ -2,10 +2,11 @@
 Unit tests for FastAPI inference service
 """
 
-import pytest
-from fastapi.testclient import TestClient
 import sys
 from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
 
 # Add the project root to the path if needed
 project_root = Path(__file__).parent.parent.parent
