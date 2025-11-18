@@ -2,13 +2,10 @@
 Unit tests for FastAPI inference service
 """
 
-import sys
 import pytest
 from fastapi.testclient import TestClient
 
-sys.path.insert(0, "../")
-
-from api.main import app
+from ml.api.main import app
 
 client = TestClient(app)
 
@@ -37,17 +34,17 @@ def test_predict_endpoint():
             "vehicle_counts": [12, 8, 15, 10, 6, 9, 14, 11],
             "speeds": [35.5, 42.0, 28.3, 38.7, 45.2, 33.1, 30.5, 40.2],
             "densities": [0.04, 0.027, 0.05, 0.033, 0.02, 0.03, 0.047, 0.037],
-            "time_of_day": 8.5,
+            "time_of_day": 8.5
         },
         "return_q_values": True,
-        "request_id": "test-001",
+        "request_id": "test-001"
     }
-
+    
     response = client.post("/predict", json=request_data)
-
+    
     # May return 503 if model not loaded in test environment
     assert response.status_code in [200, 503]
-
+    
     if response.status_code == 200:
         data = response.json()
         assert "action" in data
@@ -63,10 +60,10 @@ def test_predict_invalid_input():
             "vehicle_counts": [12],  # Too few values
             "speeds": [35.5],
             "densities": [0.04],
-            "time_of_day": 8.5,
+            "time_of_day": 8.5
         }
     }
-
+    
     response = client.post("/predict", json=request_data)
     # Should fail validation
     assert response.status_code in [422, 503]
@@ -77,7 +74,7 @@ def test_model_info():
     response = client.get("/model-info")
     # May return 503 if model not loaded
     assert response.status_code in [200, 503]
-
+    
     if response.status_code == 200:
         data = response.json()
         assert "version" in data
@@ -92,7 +89,7 @@ def test_batch_predict():
                 "vehicle_counts": [12, 8, 15, 10, 6, 9, 14, 11],
                 "speeds": [35.5, 42.0, 28.3, 38.7, 45.2, 33.1, 30.5, 40.2],
                 "densities": [0.04, 0.027, 0.05, 0.033, 0.02, 0.03, 0.047, 0.037],
-                "time_of_day": 8.5,
+                "time_of_day": 8.5
             }
         },
         {
@@ -100,14 +97,14 @@ def test_batch_predict():
                 "vehicle_counts": [10, 12, 8, 15, 9, 6, 11, 14],
                 "speeds": [40.0, 38.5, 42.3, 35.7, 43.2, 39.1, 36.5, 41.2],
                 "densities": [0.033, 0.04, 0.027, 0.05, 0.03, 0.02, 0.037, 0.047],
-                "time_of_day": 9.0,
+                "time_of_day": 9.0
             }
-        },
+        }
     ]
-
+    
     response = client.post("/batch-predict", json=request_data)
     assert response.status_code in [200, 503]
-
+    
     if response.status_code == 200:
         data = response.json()
         assert "predictions" in data
