@@ -39,9 +39,9 @@ ENV PATH=/root/.local/bin:$PATH
 ENV PYTHONPATH=/app
 
 # ====================================
-# Copy ONLY the files that actually exist
+# Copy all files from build context
 # ====================================
-COPY ml/ ./
+COPY . .
 
 # Create non-root user
 RUN useradd -m -u 1000 apiuser && \
