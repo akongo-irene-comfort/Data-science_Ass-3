@@ -11,7 +11,7 @@ import torch
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from prometheus_client import Counter, Histogram, Gauge, generate_latest
 from prometheus_client import CONTENT_TYPE_LATEST
 
@@ -69,8 +69,8 @@ class StateObservation(BaseModel):
     )
     time_of_day: float = Field(..., ge=0, le=24, description="Time of day (0-24)")
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "vehicle_counts": [12, 8, 15, 10, 6, 9, 14, 11],
                 "speeds": [35.5, 42.0, 28.3, 38.7, 45.2, 33.1, 30.5, 40.2],
@@ -78,6 +78,7 @@ class StateObservation(BaseModel):
                 "time_of_day": 8.5,
             }
         }
+    )
 
 
 class InferenceRequest(BaseModel):
@@ -92,6 +93,7 @@ class InferenceRequest(BaseModel):
 
 class InferenceResponse(BaseModel):
     """Inference API response"""
+    model_config = ConfigDict(protected_namespaces=())
 
     action: int = Field(..., description="Selected traffic signal action (0-7)")
     action_name: str = Field(..., description="Human-readable action name")
@@ -109,6 +111,7 @@ class InferenceResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     """Health check response"""
+    model_config = ConfigDict(protected_namespaces=())
 
     status: str
     model_loaded: bool
@@ -295,11 +298,13 @@ async def batch_predict(requests: List[InferenceRequest]):
     Batch prediction endpoint for processing multiple states at once
     Improves throughput for batch processing scenarios
     """
-    if model_state.model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-
+    # Check batch size limit FIRST
     if len(requests) > 100:
         raise HTTPException(status_code=400, detail="Batch size exceeds limit of 100")
+    
+    # Then check if model is loaded
+    if model_state.model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
 
     results = []
     for req in requests:
@@ -343,18 +348,8 @@ async def reload_model():
         raise HTTPException(status_code=500, detail="Model reload failed")
 
 
-# Custom exception handler
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "Internal server error",
-            "detail": str(exc),
-            "timestamp": datetime.utcnow().isoformat(),
-        },
-    )
+# Custom exception handler - removed to let FastAPI handle HTTPExceptions properly
+# This allows proper 503/422 status codes to be returned
 
 
 if __name__ == "__main__":
