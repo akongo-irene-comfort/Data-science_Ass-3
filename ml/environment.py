@@ -31,7 +31,8 @@ class TrafficEnv(gym.Env):
     def __init__(self, sumo_cfg="sumo/grid.sumocfg", gui=False, max_steps=3600):
         super(TrafficEnv, self).__init__()
 
-        self.sumo_cfg = sumo_cfg
+        # Resolve absolute path to SUMO config
+        self.sumo_cfg = self._resolve_sumo_path(sumo_cfg)
         self.use_gui = gui
         self.max_steps = max_steps
 
@@ -55,6 +56,19 @@ class TrafficEnv(gym.Env):
         self.sumo_cmd = None
         self.connection = None
 
+    def _resolve_sumo_path(self, sumo_cfg):
+        """Resolve absolute path to SUMO configuration"""
+        if os.path.exists(sumo_cfg):
+            return os.path.abspath(sumo_cfg)
+        
+        # Try to find in parent directory
+        parent_path = os.path.join(os.path.dirname(__file__), "..", sumo_cfg)
+        if os.path.exists(parent_path):
+            return os.path.abspath(parent_path)
+        
+        print(f"WARNING: SUMO config not found at {sumo_cfg}")
+        return sumo_cfg
+
     def reset(self, seed=None, options=None):
         """Reset the environment"""
         super().reset(seed=seed)
@@ -65,6 +79,13 @@ class TrafficEnv(gym.Env):
                 traci.close()
             except Exception:
                 pass
+
+        # Check if SUMO config exists
+        if not os.path.exists(self.sumo_cfg):
+            print(f"ERROR: SUMO config file not found: {self.sumo_cfg}")
+            state = np.zeros(self.observation_space.shape[0], dtype=np.float32)
+            info = self._get_info()
+            return state, info
 
         # Start SUMO
         if self.use_gui:
@@ -82,9 +103,14 @@ class TrafficEnv(gym.Env):
             "--random",
         ]
 
-        if traci:
-            traci.start(sumo_cmd)
-            self.connection = traci
+        try:
+            if traci:
+                traci.start(sumo_cmd)
+                self.connection = traci
+                print(f"SUMO started successfully with config: {self.sumo_cfg}")
+        except Exception as e:
+            print(f"ERROR: Failed to start SUMO: {e}")
+            self.connection = None
 
         self.current_step = 0
         self.total_waiting_time = 0
@@ -99,6 +125,14 @@ class TrafficEnv(gym.Env):
 
     def step(self, action):
         """Execute action and return next state"""
+        if self.connection is None:
+            # Return dummy values if SUMO not connected
+            state = np.zeros(self.observation_space.shape[0], dtype=np.float32)
+            reward = 0.0
+            terminated = True
+            truncated = False
+            info = self._get_info()
+            return state, reward, terminated, truncated, info
 
         # Apply action (change traffic light phase)
         self._apply_action(action)
@@ -131,26 +165,32 @@ class TrafficEnv(gym.Env):
 
         state = []
 
-        # Get state for each lane
-        lane_ids = traci.lane.getIDList()[:8]  # First 8 lanes
+        try:
+            # Get state for each lane
+            lane_ids = traci.lane.getIDList()[:8]  # First 8 lanes
 
-        for lane_id in lane_ids:
-            # Vehicle count
-            vehicle_count = traci.lane.getLastStepVehicleNumber(lane_id)
-            state.append(vehicle_count)
+            for lane_id in lane_ids:
+                # Vehicle count
+                vehicle_count = traci.lane.getLastStepVehicleNumber(lane_id)
+                state.append(vehicle_count)
 
-            # Average speed
-            avg_speed = traci.lane.getLastStepMeanSpeed(lane_id)
-            state.append(avg_speed)
+                # Average speed
+                avg_speed = traci.lane.getLastStepMeanSpeed(lane_id)
+                state.append(avg_speed)
 
-            # Density (vehicles per meter)
-            length = traci.lane.getLength(lane_id)
-            density = vehicle_count / length if length > 0 else 0
-            state.append(density)
+                # Density (vehicles per meter)
+                length = traci.lane.getLength(lane_id)
+                density = vehicle_count / length if length > 0 else 0
+                state.append(density)
 
-        # Time of day (normalized 0-1)
-        time_of_day = (self.current_step % 3600) / 3600.0
-        state.append(time_of_day)
+            # Time of day (normalized 0-1)
+            time_of_day = (self.current_step % 3600) / 3600.0
+            state.append(time_of_day)
+
+        except Exception as e:
+            print(f"Error getting state: {e}")
+            # Return zeros if error occurs
+            state = [0] * (8 * 3 + 1)
 
         return np.array(state, dtype=np.float32)
 
@@ -176,8 +216,8 @@ class TrafficEnv(gym.Env):
         try:
             phase = phase_mapping.get(action, 0)
             traci.trafficlight.setPhase(traffic_light_id, phase)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error applying action: {e}")
 
     def _compute_reward(self):
         """Compute reward based on multiple objectives"""
@@ -202,33 +242,39 @@ class TrafficEnv(gym.Env):
         if not self.connection:
             return 0
 
-        waiting_time = 0
-        for veh_id in traci.vehicle.getIDList():
-            waiting_time += traci.vehicle.getWaitingTime(veh_id)
-
-        return waiting_time
+        try:
+            waiting_time = 0
+            for veh_id in traci.vehicle.getIDList():
+                waiting_time += traci.vehicle.getWaitingTime(veh_id)
+            return waiting_time
+        except Exception:
+            return 0
 
     def _get_queue_length(self):
         """Get total queue length"""
         if not self.connection:
             return 0
 
-        queue_length = 0
-        for lane_id in traci.lane.getIDList()[:8]:
-            queue_length += traci.lane.getLastStepHaltingNumber(lane_id)
-
-        return queue_length
+        try:
+            queue_length = 0
+            for lane_id in traci.lane.getIDList()[:8]:
+                queue_length += traci.lane.getLastStepHaltingNumber(lane_id)
+            return queue_length
+        except Exception:
+            return 0
 
     def _get_throughput(self):
         """Get number of vehicles that completed their trip"""
         if not self.connection:
             return 0
 
-        # Count arrived vehicles in this step
-        arrived = traci.simulation.getArrivedNumber()
-        self.vehicles_completed += arrived
-
-        return arrived
+        try:
+            # Count arrived vehicles in this step
+            arrived = traci.simulation.getArrivedNumber()
+            self.vehicles_completed += arrived
+            return arrived
+        except Exception:
+            return 0
 
     def _get_info(self):
         """Get additional information"""
@@ -241,6 +287,7 @@ class TrafficEnv(gym.Env):
             "avg_queue_length": avg_queue_length,
             "throughput": self.vehicles_completed,
             "total_waiting_time": self.total_waiting_time,
+            "sumo_connected": self.connection is not None,
         }
 
     def close(self):

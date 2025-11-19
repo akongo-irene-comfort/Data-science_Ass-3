@@ -7,6 +7,7 @@ import argparse
 import json
 from datetime import datetime
 from pathlib import Path
+import os
 
 import numpy as np
 import torch
@@ -63,7 +64,12 @@ def train_dqn(args):
 
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.n
-
+    print(f"Starting training for {args.episodes} episodes...")
+    if not os.path.exists("sumo/grid.sumocfg"):
+        print("SUMO configuration not found. Creating basic files...")
+        # You can add code here to create basic SUMO files
+        print("Please create the sumo/ directory with grid.sumocfg, grid.net.xml, and grid.rou.xml")
+        return
     print(f"Environment initialized: state_dim={state_dim}, action_dim={action_dim}")
 
     # Initialize networks
