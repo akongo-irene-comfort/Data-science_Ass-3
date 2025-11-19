@@ -170,54 +170,10 @@ def load_model(model_path: str = "/app/models/dqn_final_traced.pt"):
         return False
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize model on startup"""
-    logger.info("Starting RL Traffic Control API...")
-
-    success = load_model()
-    if not success:
-        logger.warning(
-            "Model not loaded - API will return errors for inference requests"
-        )
-
-    logger.info("API startup complete")
-
-
-@app.get("/", tags=["Root"])
-async def root():
-    """Root endpoint"""
-    return {
-        "message": "RL Traffic Control API",
-        "version": "1.0.0",
-        "docs": "/docs",
-        "health": "/health",
-    }
-
-
-@app.get("/health", response_model=HealthResponse, tags=["Health"])
-async def health_check():
-    """Health check endpoint for Kubernetes readiness/liveness probes"""
-    uptime = time.time() - model_state.start_time
-
-    return HealthResponse(
-        status="healthy" if model_state.model is not None else "degraded",
-        model_loaded=model_state.model is not None,
-        model_version=model_state.model_version,
-        device=str(model_state.device) if model_state.device else "none",
-        uptime_seconds=round(uptime, 2),
-    )
-
-
-@app.post("/predict", response_model=InferenceResponse, tags=["Inference"])
-@ACTIVE_REQUESTS.track_inprogress()
-async def predict_action(request: InferenceRequest):
+def _perform_inference(request: InferenceRequest) -> InferenceResponse:
     """
-    Predict optimal traffic signal action given current state observation
-
-    - **state**: Current traffic state (vehicle counts, speeds, densities)
-    - **return_q_values**: Whether to return all Q-values for analysis
-    - **request_id**: Optional ID for request tracking
+    Internal function to perform inference (synchronous core logic)
+    Extracted to be reusable by both single and batch prediction endpoints
     """
     start_time = time.time()
 
@@ -284,12 +240,67 @@ async def predict_action(request: InferenceRequest):
             request_id=request.request_id,
         )
 
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         INFERENCE_COUNTER.labels(
             model_version=model_state.model_version, status="error"
         ).inc()
         logger.error(f"Inference error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize model on startup"""
+    logger.info("Starting RL Traffic Control API...")
+
+    success = load_model()
+    if not success:
+        logger.warning(
+            "Model not loaded - API will return errors for inference requests"
+        )
+
+    logger.info("API startup complete")
+
+
+@app.get("/", tags=["Root"])
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "RL Traffic Control API",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
+@app.get("/health", response_model=HealthResponse, tags=["Health"])
+async def health_check():
+    """Health check endpoint for Kubernetes readiness/liveness probes"""
+    uptime = time.time() - model_state.start_time
+
+    return HealthResponse(
+        status="healthy" if model_state.model is not None else "degraded",
+        model_loaded=model_state.model is not None,
+        model_version=model_state.model_version,
+        device=str(model_state.device) if model_state.device else "none",
+        uptime_seconds=round(uptime, 2),
+    )
+
+
+@app.post("/predict", response_model=InferenceResponse, tags=["Inference"])
+@ACTIVE_REQUESTS.track_inprogress()
+async def predict_action(request: InferenceRequest):
+    """
+    Predict optimal traffic signal action given current state observation
+
+    - **state**: Current traffic state (vehicle counts, speeds, densities)
+    - **return_q_values**: Whether to return all Q-values for analysis
+    - **request_id**: Optional ID for request tracking
+    """
+    return _perform_inference(request)
 
 
 @app.post("/batch-predict", tags=["Inference"])
@@ -308,7 +319,7 @@ async def batch_predict(requests: List[InferenceRequest]):
 
     results = []
     for req in requests:
-        result = await predict_action(req)
+        result = _perform_inference(req)
         results.append(result)
 
     return {"predictions": results, "batch_size": len(results)}
@@ -346,10 +357,6 @@ async def reload_model():
         return {"status": "success", "version": model_state.model_version}
     else:
         raise HTTPException(status_code=500, detail="Model reload failed")
-
-
-# Custom exception handler - removed to let FastAPI handle HTTPExceptions properly
-# This allows proper 503/422 status codes to be returned
 
 
 if __name__ == "__main__":
