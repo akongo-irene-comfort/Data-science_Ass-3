@@ -335,7 +335,7 @@ async def health_check():
 
 @app.post("/predict", response_model=InferenceResponse, tags=["Inference"])
 @ACTIVE_REQUESTS.track_inprogress()
-async def predict_action(request: InferenceRequest):
+def predict_action(request: InferenceRequest):
     """
     Predict optimal traffic signal action given current state observation
 
@@ -347,7 +347,7 @@ async def predict_action(request: InferenceRequest):
 
 
 @app.post("/batch-predict", tags=["Inference"])
-async def batch_predict(requests: List[InferenceRequest]):
+def batch_predict(requests: List[InferenceRequest]):
     """
     Batch prediction endpoint for processing multiple states at once
     Improves throughput for batch processing scenarios
