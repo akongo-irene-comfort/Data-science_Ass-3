@@ -7,6 +7,7 @@ WORKDIR /build
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install dependencies
@@ -31,11 +32,12 @@ COPY --from=builder /root/.local /root/.local
 
 # Make sure scripts in .local are usable
 ENV PATH=/root/.local/bin:$PATH
+ENV PYTHONPATH=/app
 
-# Copy application code
-COPY api/ /app/api/
-COPY models/ /app/models/
-COPY utils.py /app/
+# Copy application code - FIXED PATHS
+COPY ml/api/ ./api/
+COPY ml/models/ ./models/
+COPY ml/utils.py ./
 
 # Create non-root user for security
 RUN useradd -m -u 1000 apiuser && \
@@ -46,9 +48,9 @@ USER apiuser
 # Expose port
 EXPOSE 8000
 
-# Health check
+# Health check (using Python instead of curl)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD python -c "import requests; requests.get('http://localhost:8000/health', timeout=5)" || exit 1
 
 # Run FastAPI with uvicorn
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

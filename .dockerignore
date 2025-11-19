@@ -1,0 +1,13 @@
+**/__pycache__
+**/.pytest_cache
+**/.git
+**/*.log
+**/test_*
+**/*.pyc
+*.egg-info
+.gitignore
+README.md
+.DS_Store
+.sumocfg
+.net.xml
+.rou.xml
