@@ -1,53 +1,45 @@
-"""
-Unit tests for FastAPI inference service
-"""
-
-import sys
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
-
-# Add the project root to the path if needed
-project_root = Path(__file__).parent.parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
-try:
-    from ml.api.main import app
-except ImportError:
-    # Fallback for different project structures
-    try:
-        from api.main import app
-    except ImportError:
-        pytest.skip("Could not import app", allow_module_level=True)
+from fastapi import RequestValidationError
+from ml.api.main import app, model_state, load_model
 
 client = TestClient(app)
 
+@pytest.fixture(autouse=True)
+def setup_model():
+    """Ensure model is loaded before each test"""
+    if model_state.model is None:
+        load_model()
 
-def test_root_endpoint():
+def test_root():
     """Test root endpoint"""
     response = client.get("/")
     assert response.status_code == 200
     data = response.json()
     assert "message" in data
-    assert "version" in data
+    assert data["message"] == "RL Traffic Control API"
 
-
-def test_health_check():
-    """Test health check endpoint"""
+def test_health():
+    """Test health endpoint"""
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
-    assert "status" in data
+    assert data["status"] in ["healthy", "degraded"]
     assert "model_loaded" in data
     assert "model_version" in data
-    assert "device" in data
     assert "uptime_seconds" in data
 
+def test_model_info():
+    """Test model info endpoint"""
+    response = client.get("/model-info")
+    assert response.status_code == 200
+    data = response.json()
+    assert "version" in data
+    assert "actions" in data
+    assert len(data["actions"]) == 8
 
-def test_predict_endpoint_no_model():
-    """Test prediction endpoint returns 503 when model not loaded"""
+def test_predict_valid_input():
+    """Test prediction with valid input"""
     request_data = {
         "state": {
             "vehicle_counts": [12, 8, 15, 10, 6, 9, 14, 11],
@@ -56,17 +48,20 @@ def test_predict_endpoint_no_model():
             "time_of_day": 8.5,
         },
         "return_q_values": True,
-        "request_id": "test-001",
+        "request_id": "test-123"
     }
 
     response = client.post("/predict", json=request_data)
-
-    # Should return 503 since model is not loaded in test environment
-    assert response.status_code == 503
+    assert response.status_code == 200
     data = response.json()
-    assert "detail" in data
-    assert "not loaded" in data["detail"].lower()
-
+    assert "action" in data
+    assert "action_name" in data
+    assert "confidence" in data
+    assert "q_values" in data
+    assert "inference_time_ms" in data
+    assert data["request_id"] == "test-123"
+    assert isinstance(data["action"], int)
+    assert 0 <= data["action"] <= 7
 
 def test_predict_invalid_input():
     """Test prediction with invalid input"""
@@ -82,103 +77,98 @@ def test_predict_invalid_input():
     response = client.post("/predict", json=request_data)
     # Should fail validation with 422
     assert response.status_code == 422
+    error_detail = response.json()["detail"][0]
+    assert "vehicle_counts" in error_detail["loc"]
 
-
-def test_predict_invalid_time_of_day():
-    """Test prediction with invalid time_of_day"""
+def test_predict_invalid_time():
+    """Test prediction with invalid time of day"""
     request_data = {
         "state": {
             "vehicle_counts": [12, 8, 15, 10, 6, 9, 14, 11],
             "speeds": [35.5, 42.0, 28.3, 38.7, 45.2, 33.1, 30.5, 40.2],
             "densities": [0.04, 0.027, 0.05, 0.033, 0.02, 0.03, 0.047, 0.037],
-            "time_of_day": 25.0,  # Invalid: > 24
+            "time_of_day": 25.0,  # Invalid time
         }
     }
 
     response = client.post("/predict", json=request_data)
-    # Should fail validation
     assert response.status_code == 422
+    error_detail = response.json()["detail"][0]
+    assert "time_of_day" in error_detail["loc"]
 
-
-def test_model_info_no_model():
-    """Test model info endpoint when model not loaded"""
-    response = client.get("/model-info")
-    # Should return 503 if model not loaded
-    assert response.status_code == 503
-
-
-def test_batch_predict_no_model():
-    """Test batch prediction endpoint when model not loaded"""
-    request_data = [
-        {
-            "state": {
-                "vehicle_counts": [12, 8, 15, 10, 6, 9, 14, 11],
-                "speeds": [35.5, 42.0, 28.3, 38.7, 45.2, 33.1, 30.5, 40.2],
-                "densities": [0.04, 0.027, 0.05, 0.033, 0.02, 0.03, 0.047, 0.037],
-                "time_of_day": 8.5,
-            }
+def test_predict_without_q_values():
+    """Test prediction without returning Q-values"""
+    request_data = {
+        "state": {
+            "vehicle_counts": [12, 8, 15, 10, 6, 9, 14, 11],
+            "speeds": [35.5, 42.0, 28.3, 38.7, 45.2, 33.1, 30.5, 40.2],
+            "densities": [0.04, 0.027, 0.05, 0.033, 0.02, 0.03, 0.047, 0.037],
+            "time_of_day": 8.5,
         },
-        {
-            "state": {
-                "vehicle_counts": [10, 12, 8, 15, 9, 6, 11, 14],
-                "speeds": [40.0, 38.5, 42.3, 35.7, 43.2, 39.1, 36.5, 41.2],
-                "densities": [
-                    0.033,
-                    0.04,
-                    0.027,
-                    0.05,
-                    0.03,
-                    0.02,
-                    0.037,
-                    0.047,
-                ],
-                "time_of_day": 9.0,
-            }
-        },
-    ]
+        "return_q_values": False
+    }
 
-    response = client.post("/batch-predict", json=request_data)
-    # Should return 503 since model not loaded
-    assert response.status_code == 503
-
-
-def test_batch_predict_exceeds_limit():
-    """Test batch prediction with too many requests"""
-    # Create 101 requests (exceeds limit of 100)
-    request_data = [
-        {
-            "state": {
-                "vehicle_counts": [12, 8, 15, 10, 6, 9, 14, 11],
-                "speeds": [35.5, 42.0, 28.3, 38.7, 45.2, 33.1, 30.5, 40.2],
-                "densities": [0.04, 0.027, 0.05, 0.033, 0.02, 0.03, 0.047, 0.037],
-                "time_of_day": 8.5,
-            }
-        }
-        for _ in range(101)
-    ]
-
-    response = client.post("/batch-predict", json=request_data)
-    # Should return 400 for exceeding batch limit
-    assert response.status_code == 400
+    response = client.post("/predict", json=request_data)
+    assert response.status_code == 200
     data = response.json()
-    assert "detail" in data
-    assert "exceeds limit" in data["detail"].lower()
+    assert data["q_values"] is None
 
+def test_batch_predict():
+    """Test batch prediction"""
+    requests_data = {
+        "requests": [
+            {
+                "state": {
+                    "vehicle_counts": [12, 8, 15, 10, 6, 9, 14, 11],
+                    "speeds": [35.5, 42.0, 28.3, 38.7, 45.2, 33.1, 30.5, 40.2],
+                    "densities": [0.04, 0.027, 0.05, 0.033, 0.02, 0.03, 0.047, 0.037],
+                    "time_of_day": 8.5,
+                }
+            },
+            {
+                "state": {
+                    "vehicle_counts": [10, 7, 12, 9, 5, 8, 13, 10],
+                    "speeds": [40.0, 38.5, 32.1, 41.2, 43.0, 35.8, 29.9, 39.5],
+                    "densities": [0.03, 0.025, 0.045, 0.03, 0.018, 0.028, 0.05, 0.032],
+                    "time_of_day": 18.2,
+                }
+            }
+        ]
+    }
 
-def test_metrics_endpoint():
-    """Test Prometheus metrics endpoint"""
+    response = client.post("/batch-predict", json=requests_data)
+    assert response.status_code == 200
+    data = response.json()
+    assert "predictions" in data
+    assert "batch_size" in data
+    assert data["batch_size"] == 2
+    assert len(data["predictions"]) == 2
+
+def test_batch_predict_too_large():
+    """Test batch prediction with too many requests"""
+    requests_data = {
+        "requests": [{"state": {
+            "vehicle_counts": [12, 8, 15, 10, 6, 9, 14, 11],
+            "speeds": [35.5, 42.0, 28.3, 38.7, 45.2, 33.1, 30.5, 40.2],
+            "densities": [0.04, 0.027, 0.05, 0.033, 0.02, 0.03, 0.047, 0.037],
+            "time_of_day": 8.5,
+        }}] * 101  # Exceeds limit
+    }
+
+    response = client.post("/batch-predict", json=requests_data)
+    assert response.status_code == 400
+    assert "exceeds limit" in response.json()["detail"].lower()
+
+def test_metrics():
+    """Test metrics endpoint"""
     response = client.get("/metrics")
     assert response.status_code == 200
-    # Metrics should be in Prometheus text format
-    assert "text/plain" in response.headers.get("content-type", "")
+    assert response.headers["content-type"] == "text/plain; version=0.0.4; charset=utf-8"
 
-
-def test_reload_model_endpoint():
+def test_reload_model():
     """Test model reload endpoint"""
     response = client.post("/reload-model")
-    # Will fail since model path doesn't exist in test, but endpoint should exist
-    assert response.status_code in [200, 500]
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert "version" in data
