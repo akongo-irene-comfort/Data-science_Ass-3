@@ -8,13 +8,12 @@ import logging
 import os
 from datetime import datetime
 from typing import List
-
-from fastapi.exceptions import RequestValidationError
 import torch
 import torch.nn as nn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ConfigDict, validator
 from prometheus_client import Counter, Histogram, Gauge, generate_latest
 from prometheus_client import CONTENT_TYPE_LATEST
