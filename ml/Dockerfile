@@ -41,12 +41,7 @@ ENV PYTHONPATH=/app
 # ====================================
 # Copy ONLY the files that actually exist
 # ====================================
-COPY ml/api/ ./api/
-COPY ml/utils.py ./
-COPY ml/dqn_agent.py ./
-COPY ml/environment.py ./
-COPY ml/train.py ./
-COPY ml/evaluate.py ./
+COPY ml/ ./
 
 # Create non-root user
 RUN useradd -m -u 1000 apiuser && \
