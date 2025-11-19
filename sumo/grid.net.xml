@@ -1,30 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<net version="1.9" junctionCornerDetail="5" limitTurnSpeed="5.50" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/net_file.xsd">
-    <location netOffset="0.00,0.00" convBoundary="0.00,0.00,500.00,500.00" origBoundary="0.00,0.00,500.00,500.00" projParameter="!"/>
+<net version="1.9" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/net_file.xsd">
+    <location netOffset="0.00,0.00" convBoundary="0.00,0.00,500.00,500.00" origBoundary="0.00,0.00,500.00,500.00"/>
     
     <!-- Nodes (Junctions) -->
-    <junction id="J0" type="priority" x="100.00" y="100.00" incLanes="" intLanes="" shape="100.00,100.00"/>
-    <junction id="J1" type="traffic_light" x="100.00" y="300.00" incLanes="" intLanes="" shape="100.00,300.00"/>
-    <junction id="J2" type="priority" x="300.00" y="100.00" incLanes="" intLanes="" shape="300.00,100.00"/>
-    <junction id="J3" type="priority" x="300.00" y="300.00" incLanes="" intLanes="" shape="300.00,300.00"/>
+    <junction id="J0" type="priority" x="100.00" y="100.00" incLanes="" intLanes=""/>
+    <junction id="J1" type="traffic_light" x="100.00" y="300.00" incLanes="" intLanes=""/>
+    <junction id="J2" type="priority" x="300.00" y="100.00" incLanes="" intLanes=""/>
+    <junction id="J3" type="priority" x="300.00" y="300.00" incLanes="" intLanes=""/>
     
     <!-- Edges (Roads) -->
     <edge id="e0" from="J0" to="J1" priority="1" numLanes="2" speed="13.89"/>
-    <edge id="-e0" from="J1" to="J0" priority="1" numLanes="2" speed="13.89"/>
+    <edge id="e0_r" from="J1" to="J0" priority="1" numLanes="2" speed="13.89"/>
     <edge id="e1" from="J0" to="J2" priority="1" numLanes="2" speed="13.89"/>
-    <edge id="-e1" from="J2" to="J0" priority="1" numLanes="2" speed="13.89"/>
+    <edge id="e1_r" from="J2" to="J0" priority="1" numLanes="2" speed="13.89"/>
     <edge id="e2" from="J1" to="J3" priority="1" numLanes="2" speed="13.89"/>
-    <edge id="-e2" from="J3" to="J1" priority="1" numLanes="2" speed="13.89"/>
+    <edge id="e2_r" from="J3" to="J1" priority="1" numLanes="2" speed="13.89"/>
     <edge id="e3" from="J2" to="J3" priority="1" numLanes="2" speed="13.89"/>
-    <edge id="-e3" from="J3" to="J2" priority="1" numLanes="2" speed="13.89"/>
+    <edge id="e3_r" from="J3" to="J2" priority="1" numLanes="2" speed="13.89"/>
     
-    <!-- Connections -->
-    <connection from="e0" to="e2" fromLane="0" toLane="0"/>
-    <connection from="e0" to="e2" fromLane="1" toLane="1"/>
-    <connection from="e1" to="e3" fromLane="0" toLane="0"/>
-    <connection from="e1" to="e3" fromLane="1" toLane="1"/>
-    <connection from="e2" to="-e0" fromLane="0" toLane="0"/>
-    <connection from="e2" to="-e0" fromLane="1" toLane="1"/>
-    <connection from="e3" to="-e1" fromLane="0" toLane="0"/>
-    <connection from="e3" to="-e1" fromLane="1" toLane="1"/>
+    <!-- Connections with proper 'dir' attribute -->
+    <connection from="e0" to="e2" fromLane="0" toLane="0" dir="s"/>
+    <connection from="e0" to="e2" fromLane="1" toLane="1" dir="s"/>
+    <connection from="e1" to="e3" fromLane="0" toLane="0" dir="s"/>
+    <connection from="e1" to="e3" fromLane="1" toLane="1" dir="s"/>
+    <connection from="e2_r" to="e0_r" fromLane="0" toLane="0" dir="s"/>
+    <connection from="e2_r" to="e0_r" fromLane="1" toLane="1" dir="s"/>
+    <connection from="e3_r" to="e1_r" fromLane="0" toLane="0" dir="s"/>
+    <connection from="e3_r" to="e1_r" fromLane="1" toLane="1" dir="s"/>
 </net>
