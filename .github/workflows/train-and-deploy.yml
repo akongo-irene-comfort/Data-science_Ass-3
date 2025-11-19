@@ -127,40 +127,89 @@ jobs:
           echo $MODEL_VERSION > models/version.txt
 
   # Job 3: Build and Push Docker Images
-  # Job 3: Build and Push Docker Images (FIXED)
-build:
-  name: Build Docker Images
-  runs-on: ubuntu-latest
-  # needs: train  # Comment out for testing first
-  if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-  permissions:
-    contents: read
-    packages: write
-  steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: train
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Download model artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: trained-model
+          path: ml/models/
 
-    - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Build and push API image
-      uses: docker/build-push-action@v5
-      with:
-        context: ./ml  # Change context to ml directory
-        file: ./ml/Dockerfile
-        push: false  # Test without pushing first
-        tags: ${{ env.API_IMAGE }}:test
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        # Add no cache for clean build
-        no-cache: true
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for API image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.API_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./ml
+          file: ./ml/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Job 4: Deploy to Kubernetes
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: ${{ github.event.inputs.environment || 'staging' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/hpa.yaml
+          kubectl rollout status deployment/rl-traffic-api -n rl-traffic
+
+      - name: Run smoke tests
+        run: |
+          kubectl wait --for=condition=ready pod -l app=rl-traffic-api -n rl-traffic --timeout=300s
+          kubectl port-forward -n rl-traffic svc/rl-traffic-api 8080:80 &
+          sleep 5
+          curl -f http://localhost:8080/health || exit 1
 
   # Job 5: Deploy Monitoring Stack
   deploy-monitoring:
