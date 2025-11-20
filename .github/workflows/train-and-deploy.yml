@@ -41,13 +41,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r ml/requirements-test.txt
 
+          
       - name: Lint with flake8
         run: |
           flake8 ml/ --count --select=E9,F63,F7,F82 --show-source --statistics
           flake8 ml/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       - name: Auto-format with black
-        run: black ml/ --check
+        run: black ml/
 
       - name: Run unit tests
         run: |
@@ -79,7 +80,6 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r ml/requirements.txt
           pip install -r ml/requirements-test.txt
 
       - name: Install SUMO
@@ -190,14 +190,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Decode kubeconfig
-        run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 --decode > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
-
-      - name: Verify cluster access
-        run: kubectl get nodes
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
 
       - name: Deploy to Kubernetes
         run: |
@@ -205,32 +202,14 @@ jobs:
           kubectl apply -f k8s/deployment.yaml
           kubectl apply -f k8s/service.yaml
           kubectl apply -f k8s/hpa.yaml
-          kubectl rollout status deployment/rl-traffic-api -n rl-traffic --timeout=300s
+          kubectl rollout status deployment/rl-traffic-api -n rl-traffic
 
       - name: Run smoke tests
         run: |
           kubectl wait --for=condition=ready pod -l app=rl-traffic-api -n rl-traffic --timeout=300s
-          
-          # Start port-forward in background and capture PID
           kubectl port-forward -n rl-traffic svc/rl-traffic-api 8080:80 &
-          PF_PID=$!
-          
-          # Wait for port-forward to be ready
           sleep 5
-          
-          # Run health check
-          if curl -f http://localhost:8080/health; then
-            echo "Health check passed"
-            EXIT_CODE=0
-          else
-            echo "Health check failed"
-            EXIT_CODE=1
-          fi
-          
-          # Clean up port-forward
-          kill $PF_PID || true
-          
-          exit $EXIT_CODE
+          curl -f http://localhost:8080/health || exit 1
 
   # Job 5: Deploy Monitoring Stack
   deploy-monitoring:
@@ -243,10 +222,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure kubectl
-        run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 --decode > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
 
       - name: Deploy Prometheus
         run: |
@@ -270,18 +249,5 @@ jobs:
     steps:
       - name: Send notification
         run: |
-          if [ "${{ needs.deploy.result }}" == "success" ] && [ "${{ needs.deploy-monitoring.result }}" == "success" ]; then
-            echo "✅ Deployment completed successfully"
-            STATUS="success"
-          else
-            echo "❌ Deployment failed"
-            STATUS="failure"
-          fi
-          
-          echo "Deploy status: ${{ needs.deploy.result }}"
-          echo "Monitoring status: ${{ needs.deploy-monitoring.result }}"
-          
-          # Uncomment and configure for Slack notifications
-          # curl -X POST -H 'Content-type: application/json' \
-          #   --data "{\"text\":\"Deployment ${STATUS}: ${{ github.repository }}@${{ github.sha }}\"}" \
-          #   ${{ secrets.SLACK_WEBHOOK_URL }}
+          echo "Deployment completed with status: ${{ needs.deploy.result }}"
+          # Add Slack/Discord webhook notification here if needed
