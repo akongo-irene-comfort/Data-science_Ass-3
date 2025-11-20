@@ -1,0 +1,7 @@
+# ml/requirements-test.txt
+-r requirements.txt
+torch>=2.6.0
+pytest
+pytest-cov
+flake8
+black
