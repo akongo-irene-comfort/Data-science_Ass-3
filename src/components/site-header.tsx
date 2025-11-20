@@ -7,8 +7,8 @@ import { useState } from "react";
 
 const navigation = [
   { name: "Home", href: "/" },
-  { name: "Part A: Proposal", href: "/proposal" },
-  { name: "Part B: Implementation", href: "/implementation" },
+  { name: "Proposal", href: "/proposal" },
+  { name: "Implementation", href: "/implementation" },
   { name: "Simulation Demo", href: "/demo" },
   { name: "Documentation", href: "/docs" },
 ];

@@ -8,7 +8,7 @@ export default function ImplementationPage() {
         <div className="mb-12 text-center">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-purple-500/20 bg-purple-500/5 px-4 py-2">
             <Code className="h-4 w-4 text-purple-600" />
-            <span className="text-sm font-medium text-purple-600">Part B: Implementation & Deployment (60%)</span>
+            <span className="text-sm font-medium text-purple-600">Implementation & Deployment</span>
           </div>
           <h1 className="mb-4 text-4xl font-bold tracking-tight sm:text-5xl">
             Practical Implementation & MLOps

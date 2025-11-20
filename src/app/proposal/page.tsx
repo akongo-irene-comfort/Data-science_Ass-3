@@ -8,7 +8,7 @@ export default function ProposalPage() {
         <div className="mb-12 text-center">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/5 px-4 py-2">
             <Brain className="h-4 w-4 text-blue-600" />
-            <span className="text-sm font-medium text-blue-600">Part A: Research & Proposal (40%)</span>
+            <span className="text-sm font-medium text-blue-600">Research & Proposal</span>
           </div>
           <h1 className="mb-4 text-4xl font-bold tracking-tight sm:text-5xl">
             Reinforcement Learning Project Proposal
