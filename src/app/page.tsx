@@ -142,10 +142,10 @@ export default function Home() {
             {/* Part A */}
             <Link href="/proposal" className="group rounded-2xl border-2 border-blue-500/20 bg-gradient-to-br from-blue-500/5 to-purple-500/5 p-8 transition-all hover:border-blue-500/40 hover:shadow-xl">
               <div className="mb-4 flex items-center justify-between">
-                <span className="text-sm font-semibold text-blue-600">40% Weight</span>
+                {/* <span className="text-sm font-semibold text-blue-600">40% Weight</span> */}
                 <Brain className="h-8 w-8 text-blue-600 transition-transform group-hover:scale-110" />
               </div>
-              <h3 className="mb-3 text-2xl font-bold">Part A: Research & Proposal</h3>
+              <h3 className="mb-3 text-2xl font-bold">Research & Proposal</h3>
               <p className="mb-4 text-muted-foreground">
                 Theoretical foundation and problem formulation
               </p>
@@ -172,10 +172,10 @@ export default function Home() {
             {/* Part B */}
             <Link href="/implementation" className="group rounded-2xl border-2 border-purple-500/20 bg-gradient-to-br from-purple-500/5 to-pink-500/5 p-8 transition-all hover:border-purple-500/40 hover:shadow-xl">
               <div className="mb-4 flex items-center justify-between">
-                <span className="text-sm font-semibold text-purple-600">60% Weight</span>
+                {/* <span className="text-sm font-semibold text-purple-600">60% Weight</span> */}
                 <Code className="h-8 w-8 text-purple-600 transition-transform group-hover:scale-110" />
               </div>
-              <h3 className="mb-3 text-2xl font-bold">Part B: Implementation & Deployment</h3>
+              <h3 className="mb-3 text-2xl font-bold">Implementation & Deployment</h3>
               <p className="mb-4 text-muted-foreground">
                 Practical engineering and MLOps
               </p>

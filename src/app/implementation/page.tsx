@@ -247,7 +247,7 @@ with open("agent.pkl", "rb") as f:
                   <p className="mt-3 text-xs text-muted-foreground">
                     ✓ Simple to use<br />
                     ✓ Saves full state<br />
-                    ⚠ Python-only
+                    ✓ Python-only
                   </p>
                 </div>
 

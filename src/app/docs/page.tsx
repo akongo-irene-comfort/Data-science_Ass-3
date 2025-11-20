@@ -1,3 +1,5 @@
+"use client";
+
 import { BookOpen, Code, Database, Zap, GitBranch, Cloud, Terminal, Package, Activity } from "lucide-react";
 
 export default function DocsPage() {
@@ -50,7 +52,7 @@ export default function DocsPage() {
                 <li>• Python 3.10+ with pip</li>
                 <li>• SUMO Traffic Simulator 1.19+</li>
                 <li>• CUDA 11.0+ (for GPU training)</li>
-                <li>• Docker & Kubernetes (for deployment)</li>
+                <li>• Docker & Render (for deployment)</li>
               </ul>
             </div>
 
@@ -160,7 +162,7 @@ echo 'export SUMO_HOME="/usr/share/sumo"' &gt;&gt; ~/.bashrc</pre>
                   <li>• <strong>Train:</strong> DQN training with SUMO (100 episodes for CI)</li>
                   <li>• <strong>Evaluate:</strong> Performance benchmarking on test episodes</li>
                   <li>• <strong>Build:</strong> Docker image creation and push to GHCR</li>
-                  <li>• <strong>Deploy:</strong> Kubernetes deployment with rolling updates</li>
+                  <li>• <strong>Deploy:</strong> Render deployment with rolling updates</li>
                   <li>• <strong>Monitor:</strong> Prometheus and Grafana stack deployment</li>
                 </ul>
               </div>
@@ -201,15 +203,18 @@ docker run -p 8000:8000 rl-traffic-api:latest`}
 
             {/* Kubernetes */}
             <div className="rounded-xl border border-border bg-card p-4">
-              <h3 className="mb-3 text-lg font-semibold text-cyan-600">Kubernetes Deployment</h3>
+              <h3 className="mb-3 text-lg font-semibold text-cyan-600">Render Deployment</h3>
               <div className="space-y-3">
                 <div className="rounded-lg bg-muted/30 p-3 text-sm">
                   <strong>Local (k3s):</strong>
-                  <pre className="mt-2 text-xs">
-{`kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/hpa.yaml`}
-                  </pre>
+                 <pre>
+        {`curl -X POST $RENDER_DEPLOY_HOOK_URL`}
+      </pre>
+      <pre>
+        {`python ml/train.py ^
+--episodes 1000 ^
+--batch-size 64`}
+      </pre>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-3 text-xs">
                   <div className="rounded-lg bg-cyan-500/5 p-2">

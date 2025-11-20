@@ -36,11 +36,11 @@ export const HeroSection = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 pt-16">
             <div className="space-y-2">
-              <div className="text-4xl font-bold text-primary">40%</div>
+              {/* <div className="text-4xl font-bold text-primary">40%</div> */}
               <div className="text-sm font-medium text-muted-foreground">Proposal & Theory</div>
             </div>
             <div className="space-y-2">
-              <div className="text-4xl font-bold text-primary">60%</div>
+              {/* <div className="text-4xl font-bold text-primary">60%</div> */}
               <div className="text-sm font-medium text-muted-foreground">Implementation & Deployment</div>
             </div>
             <div className="space-y-2">

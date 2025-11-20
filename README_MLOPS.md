@@ -123,7 +123,7 @@ The pipeline automatically:
 2. **Trains** - DQN model training with SUMO
 3. **Evaluates** - Performance benchmarking
 4. **Builds** - Docker image creation
-5. **Deploys** - Kubernetes deployment
+5. **Deploys** - Render deployment
 6. **Monitors** - Prometheus & Grafana setup
 
 ### Workflow Triggers
@@ -151,7 +151,7 @@ The pipeline automatically:
    - View pipeline execution
    - Download artifacts
 
-## ☸️ Kubernetes Deployment
+## ☸️ Render Deployment
 
 ### Local Deployment (k3s)
 
