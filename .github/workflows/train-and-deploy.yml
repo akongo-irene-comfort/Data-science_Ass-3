@@ -22,16 +22,17 @@ env:
   API_IMAGE: ghcr.io/${{ github.repository }}/rl-traffic-api
 
 jobs:
+
+  # -------------------------------------------------------------
   # Job 1: Code Quality and Unit Tests
+  # -------------------------------------------------------------
   test:
     name: Run Tests
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -41,7 +42,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r ml/requirements-test.txt
 
-          
       - name: Lint with flake8
         run: |
           flake8 ml/ --count --select=E9,F63,F7,F82 --show-source --statistics
@@ -54,25 +54,24 @@ jobs:
         run: |
           pytest ml/tests/ --cov=ml --cov-report=xml --cov-report=term
 
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v3
+      - uses: codecov/codecov-action@v3
         with:
           files: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
 
+  # -------------------------------------------------------------
   # Job 2: Train RL Model
+  # -------------------------------------------------------------
   train:
     name: Train DQN Model
     runs-on: ubuntu-latest
     needs: test
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -112,8 +111,7 @@ jobs:
             --episodes 10 \
             --output metrics/evaluation.json
 
-      - name: Upload model artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: trained-model
           path: |
@@ -126,37 +124,34 @@ jobs:
           echo "MODEL_VERSION=$(date +%Y%m%d_%H%M%S)_${GITHUB_SHA::8}" >> $GITHUB_ENV
           echo $MODEL_VERSION > models/version.txt
 
+  # -------------------------------------------------------------
   # Job 3: Build and Push Docker Images
+  # -------------------------------------------------------------
   build:
     name: Build Docker Images
     runs-on: ubuntu-latest
     needs: train
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: write
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Download model artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: trained-model
           path: ml/models/
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata for API image
-        id: meta
+      - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.API_IMAGE }}
@@ -167,8 +162,7 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push API image
-        uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v5
         with:
           context: ./ml
           file: ./ml/Dockerfile
@@ -178,7 +172,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Job 4: Deploy to Kubernetes
+  # -------------------------------------------------------------
+  # Job 4: Deploy to Kubernetes (FIXED INDENTATION)
+  # -------------------------------------------------------------
   deploy:
     name: Deploy to Kubernetes
     runs-on: ubuntu-latest
@@ -186,68 +182,68 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: ${{ github.event.inputs.environment || 'staging' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      - name: Configure kubectl
-        uses: azure/k8s-set-context@v3
-        with:
-          method: kubeconfig
-          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create kubeconfig file
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig
+          chmod 600 kubeconfig
 
       - name: Deploy to Kubernetes
         run: |
-          kubectl apply -f k8s/namespace.yaml
-          kubectl apply -f k8s/deployment.yaml
-          kubectl apply -f k8s/service.yaml
-          kubectl apply -f k8s/hpa.yaml
-          kubectl rollout status deployment/rl-traffic-api -n rl-traffic
+          kubectl --kubeconfig=kubeconfig apply -f k8s/namespace.yaml
+          kubectl --kubeconfig=kubeconfig apply -f k8s/deployment.yaml
+          kubectl --kubeconfig=kubeconfig apply -f k8s/service.yaml
+          kubectl --kubeconfig=kubeconfig apply -f k8s/hpa.yaml
+          kubectl --kubeconfig=kubeconfig rollout status deployment/rl-traffic-api -n rl-traffic
 
-      - name: Run smoke tests
+      - name: Smoke tests
         run: |
-          kubectl wait --for=condition=ready pod -l app=rl-traffic-api -n rl-traffic --timeout=300s
-          kubectl port-forward -n rl-traffic svc/rl-traffic-api 8080:80 &
+          kubectl --kubeconfig=kubeconfig wait --for=condition=ready pod -l app=rl-traffic-api -n rl-traffic --timeout=300s
+          kubectl --kubeconfig=kubeconfig port-forward -n rl-traffic svc/rl-traffic-api 8080:80 &
           sleep 5
           curl -f http://localhost:8080/health || exit 1
 
-  # Job 5: Deploy Monitoring Stack
+  # -------------------------------------------------------------
+  # Job 5: Deploy Monitoring
+  # -------------------------------------------------------------
   deploy-monitoring:
     name: Deploy Monitoring
     runs-on: ubuntu-latest
     needs: deploy
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      - name: Configure kubectl
-        uses: azure/k8s-set-context@v3
-        with:
-          method: kubeconfig
-          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use same kubeconfig
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig
+          chmod 600 kubeconfig
 
       - name: Deploy Prometheus
         run: |
-          kubectl apply -f k8s/monitoring/prometheus-config.yaml
-          kubectl apply -f k8s/monitoring/prometheus-deployment.yaml
+          kubectl --kubeconfig=kubeconfig apply -f k8s/monitoring/prometheus-config.yaml
+          kubectl --kubeconfig=kubeconfig apply -f k8s/monitoring/prometheus-deployment.yaml
 
       - name: Deploy Grafana
         run: |
-          kubectl apply -f k8s/monitoring/grafana-deployment.yaml
+          kubectl --kubeconfig=kubeconfig apply -f k8s/monitoring/grafana-deployment.yaml
 
       - name: Deploy Model Monitoring
         run: |
-          kubectl apply -f k8s/monitoring/model-monitor-deployment.yaml
+          kubectl --kubeconfig=kubeconfig apply -f k8s/monitoring/model-monitor-deployment.yaml
 
-  # Job 6: Notify on completion
+  # -------------------------------------------------------------
+  # Job 6: Notification
+  # -------------------------------------------------------------
   notify:
     name: Notify Deployment Status
     runs-on: ubuntu-latest
     needs: [deploy, deploy-monitoring]
     if: always()
     steps:
-      - name: Send notification
-        run: |
+      - run: |
           echo "Deployment completed with status: ${{ needs.deploy.result }}"
-          # Add Slack/Discord webhook notification here if needed
