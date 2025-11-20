@@ -11,3 +11,11 @@ README.md
 .sumocfg
 .net.xml
 .rou.xml
+*.pyc
+*.pyo
+*.pyd
+.env
+env/
+venv/
+.site-packages/
+.git/
