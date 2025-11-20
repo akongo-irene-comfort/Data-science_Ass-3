@@ -1,34 +1,48 @@
-# Stage 1: Builder
+# Use multi-stage build to reduce final image size
 FROM python:3.10-slim as builder
+
 WORKDIR /app
 
+# Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ curl && \
-    rm -rf /var/lib/apt/lists/*
+    curl \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --user --no-cache-dir -r requirements.txt
 
-# Stage 2: Runtime
+# Runtime stage
 FROM python:3.10-slim
+
 WORKDIR /app
 
+# Install only runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl libgomp1 && \
-    rm -rf /var/lib/apt/lists/*
+    curl \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
+# Copy installed packages from builder
 COPY --from=builder /root/.local /root/.local
-ENV PATH="/root/.local/bin:${PATH}"
 
+# Make sure scripts in .local are usable
+ENV PATH=/root/.local/bin:$PATH
+
+# Copy application
 COPY . .
 
-RUN useradd -m -r appuser && chown -R appuser:appuser /app
+# Create directories and non-root user BEFORE switching users
+RUN mkdir -p /app/models /app/logs && \
+    useradd -m -r appuser && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
 USER appuser
 
-RUN mkdir -p /app/models /app/logs
 EXPOSE 8000
-
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
-
+    CMD curl -f http://localhost:8000/health || exit 1
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
