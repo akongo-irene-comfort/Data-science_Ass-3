@@ -1,5 +1,5 @@
 # Core ML dependencies
-torch>=2.6.0
+# torch>=2.6.0
 numpy==1.24.3
 gymnasium==0.29.1
 
